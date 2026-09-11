@@ -66,9 +66,7 @@ x-shared-api-worker-config: &shared-api-worker-config
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
     - ./.env
-  networks:
-    - ssrf_proxy_network
-    - default
+  network_mode: host
   restart: always
 
 x-shared-worker-config: &shared-worker-config
@@ -132,9 +130,7 @@ x-shared-worker-config: &shared-worker-config
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
     - ./.env
-  networks:
-    - ssrf_proxy_network
-    - default
+  network_mode: host
   restart: always
 
 x-shared-worker-beat-config: &shared-worker-beat-config
@@ -198,14 +194,13 @@ x-shared-worker-beat-config: &shared-worker-beat-config
     - path: ./envs/infrastructure/milvus-standalone.env
       required: false
     - ./.env
-  networks:
-    - ssrf_proxy_network
-    - default
+  network_mode: host
   restart: always
 
 services:
   # Init container to fix permissions
   init_permissions:
+    network_mode: host
     image: busybox:latest
     command:
       - sh
@@ -225,6 +220,7 @@ services:
 
   # API service
   api:
+    network_mode: host
     <<: *shared-api-worker-config
     image: langgenius/dify-api:1.17.0
     environment:
@@ -237,7 +233,7 @@ services:
       PLUGIN_MAX_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
       PLUGIN_DAEMON_TIMEOUT: ${PLUGIN_DAEMON_TIMEOUT:-600.0}
       INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
-      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://agent_backend:5050}
+      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://127.0.0.1:5050}
       AGENT_BACKEND_API_TOKEN: ${DIFY_AGENT_API_TOKEN:-dify-agent-run-token-for-dev-only}
     depends_on:
       init_permissions:
@@ -262,23 +258,22 @@ services:
       # Mount the storage directory to the container, for storing user files.
       - ./volumes/app/storage:/app/api/storage
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:${DIFY_PORT:-5001}/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
-    networks:
-      - ssrf_proxy_network
-      - default
 
   # WebSocket service for workflow collaboration.
   api_websocket:
+    network_mode: host
     <<: *shared-api-worker-config
     image: langgenius/dify-api:1.17.0
     profiles:
       - collaboration
     environment:
       MODE: api
+      DIFY_PORT: ${API_WEBSOCKET_PORT:-5006}
       SERVER_WORKER_AMOUNT: ${API_WEBSOCKET_WORKER_AMOUNT:-1}
       SERVER_WORKER_CLASS: ${API_WEBSOCKET_WORKER_CLASS:-geventwebsocket.gunicorn.workers.GeventWebSocketWorker}
       SERVER_WORKER_CONNECTIONS: ${API_WEBSOCKET_WORKER_CONNECTIONS:-1000}
@@ -297,13 +292,11 @@ services:
     volumes:
       # Mount the storage directory to the container, for storing user files.
       - ./volumes/app/storage:/app/api/storage
-    networks:
-      - ssrf_proxy_network
-      - default
 
   # worker service
   # The Celery worker for processing all queues (dataset, workflow, mail, etc.)
   worker:
+    network_mode: host
     <<: *shared-worker-config
     image: langgenius/dify-api:1.17.0
     environment:
@@ -313,7 +306,7 @@ services:
       SENTRY_PROFILES_SAMPLE_RATE: ${API_SENTRY_PROFILES_SAMPLE_RATE:-1.0}
       PLUGIN_MAX_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
       INNER_API_KEY_FOR_PLUGIN: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
-      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://agent_backend:5050}
+      AGENT_BACKEND_BASE_URL: ${AGENT_BACKEND_BASE_URL:-http://127.0.0.1:5050}
       AGENT_BACKEND_API_TOKEN: ${DIFY_AGENT_API_TOKEN:-dify-agent-run-token-for-dev-only}
     depends_on:
       init_permissions:
@@ -344,13 +337,11 @@ services:
       retries: 3
       start_period: 60s
       disable: ${COMPOSE_WORKER_HEALTHCHECK_DISABLED:-true}
-    networks:
-      - ssrf_proxy_network
-      - default
 
   # worker_beat service
   # Celery beat for scheduling periodic tasks.
   worker_beat:
+    network_mode: host
     <<: *shared-worker-beat-config
     image: langgenius/dify-api:1.17.0
     environment:
@@ -379,12 +370,10 @@ services:
       retries: 3
       start_period: 60s
       disable: ${COMPOSE_WORKER_HEALTHCHECK_DISABLED:-true}
-    networks:
-      - ssrf_proxy_network
-      - default
 
   # Frontend web application.
   web:
+    network_mode: host
     image: langgenius/dify-web:1.17.0
     restart: always
     env_file:
@@ -394,8 +383,10 @@ services:
         required: false
       - ./.env
     environment:
+      HOSTNAME: 0.0.0.0
+      PORT: ${WEB_PORT:-3000}
       CONSOLE_API_URL: ${CONSOLE_API_URL:-}
-      SERVER_CONSOLE_API_URL: ${SERVER_CONSOLE_API_URL:-http://api:5001}
+      SERVER_CONSOLE_API_URL: ${SERVER_CONSOLE_API_URL:-http://127.0.0.1:5001}
       APP_API_URL: ${APP_API_URL:-}
       AMPLITUDE_API_KEY: ${AMPLITUDE_API_KEY:-}
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
@@ -423,6 +414,7 @@ services:
 
   # The PostgreSQL database.
   db_postgres:
+    network_mode: host
     image: postgres:15-alpine
     profiles:
       - postgresql
@@ -433,7 +425,7 @@ services:
       POSTGRES_DB: ${DB_DATABASE:-dify}
       PGDATA: ${PGDATA:-/var/lib/postgresql/data/pgdata}
     command: >
-      postgres -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-100}'
+      postgres -p ${DB_PORT:-5432} -c 'max_connections=${POSTGRES_MAX_CONNECTIONS:-100}'
                -c 'shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}'
                -c 'work_mem=${POSTGRES_WORK_MEM:-4MB}'
                -c 'maintenance_work_mem=${POSTGRES_MAINTENANCE_WORK_MEM:-64MB}'
@@ -448,9 +440,11 @@ services:
           "CMD",
           "pg_isready",
           "-h",
-          "db_postgres",
+          "127.0.0.1",
           "-U",
           "${DB_USERNAME:-postgres}",
+          "-p",
+          "${DB_PORT:-5432}",
           "-d",
           "${DB_DATABASE:-dify}",
         ]
@@ -460,6 +454,7 @@ services:
 
   # The mysql database.
   db_mysql:
+    network_mode: host
     image: mysql:8.0
     profiles:
       - mysql
@@ -490,6 +485,7 @@ services:
 
   # The redis cache.
   redis:
+    network_mode: host
     image: redis:6-alpine
     restart: always
     environment:
@@ -498,16 +494,17 @@ services:
       # Mount the redis data directory to the container.
       - ./volumes/redis/data:/data
     # Set the redis password when startup redis server.
-    command: redis-server --requirepass ${REDIS_PASSWORD:-difyai123456}
+    command: redis-server --port ${REDIS_PORT:-6381} --requirepass ${REDIS_PASSWORD:-difyai123456} --ignore-warnings ARM64-COW-BUG
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "redis-cli -a ${REDIS_PASSWORD:-difyai123456} ping | grep -q PONG",
+          "redis-cli -p ${REDIS_PORT:-6381} ping | grep -q PONG",
         ]
 
   # The DifySandbox
   sandbox:
+    network_mode: host
     image: langgenius/dify-sandbox:0.2.15
     restart: always
     env_file:
@@ -524,28 +521,21 @@ services:
       GIN_MODE: ${SANDBOX_GIN_MODE:-release}
       WORKER_TIMEOUT: ${SANDBOX_WORKER_TIMEOUT:-15}
       ENABLE_NETWORK: ${SANDBOX_ENABLE_NETWORK:-true}
-      HTTP_PROXY: ${SANDBOX_HTTP_PROXY:-http://ssrf_proxy:3128}
-      HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://ssrf_proxy:3128}
-      SANDBOX_PORT: ${SANDBOX_PORT:-8194}
+      HTTP_PROXY: ${SANDBOX_HTTP_PROXY:-http://127.0.0.1:3128}
+      HTTPS_PROXY: ${SANDBOX_HTTPS_PROXY:-http://127.0.0.1:3128}
+      SANDBOX_PORT: ${SANDBOX_PORT:-8195}
       PIP_MIRROR_URL: ${PIP_MIRROR_URL:-}
     volumes:
       - ./volumes/sandbox/dependencies:/dependencies
       - ./volumes/sandbox/conf:/conf
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8194/health"]
-    networks:
-      - ssrf_proxy_network
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:${SANDBOX_PORT:-8195}/health"]
 
   # Local sandbox for Dify Agent shell workspaces.
-  # Network isolation: local_sandbox has NO direct route to `api`. Its only
-  # networks are `agent_sandbox_network` (so agent_backend can reach it on 5004
-  # for shellctl, and it can reach agent_backend directly) and
-  # `local_sandbox_proxy_network` (so its egress is forced through
-  # agent_ssrf_proxy).
-  # All non-agent_backend/localhost traffic goes through the Squid forward proxy
-  # on port 3128, which only allows agent_backend /agent-stub/ and the Dify API
-  # /files/* endpoints (see ssrf_proxy/squid-agent.conf.template).
+  # Host networking shares the host network namespace; proxy variables below
+  # route cooperative HTTP clients through the dedicated Agent proxy.
   local_sandbox:
+    network_mode: host
     image: langgenius/dify-agent-local-sandbox:1.17.0
     restart: always
     env_file:
@@ -553,8 +543,8 @@ services:
         required: false
     environment:
       - SHELLCTL_AUTH_TOKEN=${DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN:-${DIFY_AGENT_SHELLCTL_AUTH_TOKEN:-}}
-      - HTTP_PROXY=http://agent_ssrf_proxy:3128
-      - HTTPS_PROXY=http://agent_ssrf_proxy:3128
+      - HTTP_PROXY=http://127.0.0.1:${AGENT_SSRF_HTTP_PORT:-3129}
+      - HTTPS_PROXY=http://127.0.0.1:${AGENT_SSRF_HTTP_PORT:-3129}
       - NO_PROXY=localhost,127.0.0.1
     volumes:
       - dify_agent_local_sandbox_home:/home/dify
@@ -565,12 +555,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
-    networks:
-      - agent_sandbox_network
-      - local_sandbox_proxy_network
 
   # plugin daemon
   plugin_daemon:
+    network_mode: host
     image: langgenius/dify-plugin-daemon:0.6.10-local
     restart: always
     env_file:
@@ -587,9 +575,6 @@ services:
       - path: ./envs/databases/redis.env
         required: false
       - ./.env
-    networks:
-      - ssrf_proxy_network
-      - default
     environment:
       DB_DATABASE: ${DB_PLUGIN_DATABASE:-dify_plugin}
       DB_SSL_MODE: ${DB_SSL_MODE:-disable}
@@ -597,7 +582,7 @@ services:
       SERVER_KEY: ${PLUGIN_DAEMON_KEY:-lYkiYYT6owG+71oLerGzA7GXCgOT++6ovaezWAjpCjf+Sjc3ZtU+qUEi}
       MAX_PLUGIN_PACKAGE_SIZE: ${PLUGIN_MAX_PACKAGE_SIZE:-52428800}
       PPROF_ENABLED: ${PLUGIN_PPROF_ENABLED:-false}
-      DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}
+      DIFY_INNER_API_URL: ${PLUGIN_DIFY_INNER_API_URL:-http://127.0.0.1:5001}
       DIFY_INNER_API_KEY: ${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}
       PLUGIN_REMOTE_INSTALLING_HOST: ${PLUGIN_DEBUGGING_HOST:-0.0.0.0}
       PLUGIN_REMOTE_INSTALLING_PORT: ${PLUGIN_DEBUGGING_PORT:-5003}
@@ -638,8 +623,6 @@ services:
       VOLCENGINE_TOS_REGION: ${PLUGIN_VOLCENGINE_TOS_REGION:-}
       SENTRY_ENABLED: ${PLUGIN_SENTRY_ENABLED:-false}
       SENTRY_DSN: ${PLUGIN_SENTRY_DSN:-}
-    ports:
-      - "${EXPOSE_PLUGIN_DEBUGGING_PORT:-5003}:${PLUGIN_DEBUGGING_PORT:-5003}"
     volumes:
       - ./volumes/plugin_daemon:/app/storage
     depends_on:
@@ -658,6 +641,7 @@ services:
 
   # Dify Agent backend service.
   agent_backend:
+    network_mode: host
     image: langgenius/dify-agent-backend:1.17.0
     restart: always
     env_file:
@@ -669,16 +653,16 @@ services:
         required: false
       - ./.env
     environment:
-      DIFY_AGENT_REDIS_URL: ${DIFY_AGENT_REDIS_URL:-redis://:${REDIS_PASSWORD:-difyai123456}@redis:6379/2}
-      DIFY_AGENT_PLUGIN_DAEMON_URL: ${DIFY_AGENT_PLUGIN_DAEMON_URL:-${PLUGIN_DAEMON_URL:-http://plugin_daemon:5002}}
+      DIFY_AGENT_REDIS_URL: ${DIFY_AGENT_REDIS_URL:-redis://:${REDIS_PASSWORD:-difyai123456}@${REDIS_HOST:-127.0.0.1}:${REDIS_PORT:-6381}/2}
+      DIFY_AGENT_PLUGIN_DAEMON_URL: ${DIFY_AGENT_PLUGIN_DAEMON_URL:-${PLUGIN_DAEMON_URL:-http://127.0.0.1:5002}}
       DIFY_AGENT_PLUGIN_DAEMON_API_KEY: ${DIFY_AGENT_PLUGIN_DAEMON_API_KEY:-${PLUGIN_DAEMON_KEY:-lYkiYYT6owG+71oLerGzA7GXCgOT++6ovaezWAjpCjf+Sjc3ZtU+qUEi}}
-      DIFY_AGENT_INNER_API_URL: ${DIFY_AGENT_INNER_API_URL:-${PLUGIN_DIFY_INNER_API_URL:-http://api:5001}}
+      DIFY_AGENT_INNER_API_URL: ${DIFY_AGENT_INNER_API_URL:-${PLUGIN_DIFY_INNER_API_URL:-http://127.0.0.1:5001}}
       DIFY_AGENT_INNER_API_KEY: ${DIFY_AGENT_INNER_API_KEY:-${PLUGIN_DIFY_INNER_API_KEY:-QaHbTe77CtuXmsfyhR7+vRjI/+XbV1AaFy691iy+kGDv2Jvy0/eAh8Y1}}
       DIFY_AGENT_RUNTIME_BACKEND: ${DIFY_AGENT_RUNTIME_BACKEND:-local}
-      DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT: ${DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT:-${DIFY_AGENT_SHELLCTL_ENTRYPOINT:-http://local_sandbox:5004}}
+      DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT: ${DIFY_AGENT_LOCAL_SANDBOX_ENDPOINT:-${DIFY_AGENT_SHELLCTL_ENTRYPOINT:-http://127.0.0.1:5004}}
       DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN: ${DIFY_AGENT_LOCAL_SANDBOX_AUTH_TOKEN:-${DIFY_AGENT_SHELLCTL_AUTH_TOKEN:-}}
-      DIFY_AGENT_STUB_API_BASE_URL: ${DIFY_AGENT_STUB_API_BASE_URL:-http://agent_backend:5050/agent-stub}
-      DIFY_AGENT_SANDBOX_FILES_BASE_URL: ${DIFY_AGENT_SANDBOX_FILES_BASE_URL:-http://api:5001}
+      DIFY_AGENT_STUB_API_BASE_URL: ${DIFY_AGENT_STUB_API_BASE_URL:-http://127.0.0.1:5050/agent-stub}
+      DIFY_AGENT_SANDBOX_FILES_BASE_URL: ${DIFY_AGENT_SANDBOX_FILES_BASE_URL:-http://127.0.0.1:5001}
       # This is security-sensitive: it derives the JWE encryption key for Agent Stub bearer tokens.
       # Replace this development default in production.
       # Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(32))'
@@ -689,14 +673,11 @@ services:
         condition: service_started
       plugin_daemon:
         condition: service_started
-    networks:
-      - default
-      # Shared internal network with local_sandbox so agent_backend can reach it
-      # on port 5004 (shellctl entrypoint) while local_sandbox stays off `default`.
-      - agent_sandbox_network
 
   # Dedicated SSRF proxy for the dify-agent local_sandbox.
   agent_ssrf_proxy:
+    privileged: true
+    network_mode: host
     image: ubuntu/squid:latest
     restart: always
     volumes:
@@ -710,19 +691,15 @@ services:
         "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh",
       ]
     environment:
-      HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
+      HTTP_PORT: ${AGENT_SSRF_HTTP_PORT:-3129}
       COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
-    networks:
-      # Needs to reach api and agent_backend as forward-proxy destinations.
-      - default
-      # Only agent_ssrf_proxy and local_sandbox share this internal network, so
-      # the local_sandbox can reach Squid without gaining a direct route to `api`.
-      - local_sandbox_proxy_network
 
   # ssrf_proxy server
   # for more information, please refer to
   # https://docs.dify.ai/learn-more/faq/install-faq#18-why-is-ssrf-proxy-needed%3F
   ssrf_proxy:
+    privileged: true
+    network_mode: host
     image: ubuntu/squid:latest
     restart: always
     volumes:
@@ -739,15 +716,13 @@ services:
       # pls clearly modify the squid env vars to fit your network environment.
       HTTP_PORT: ${SSRF_HTTP_PORT:-3128}
       COREDUMP_DIR: ${SSRF_COREDUMP_DIR:-/var/spool/squid}
-      SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-}
+      SSRF_PROXY_ALLOW_PRIVATE_IPS: ${SSRF_PROXY_ALLOW_PRIVATE_IPS:-127.0.0.1/32}
       SSRF_PROXY_ALLOW_PRIVATE_DOMAINS: ${SSRF_PROXY_ALLOW_PRIVATE_DOMAINS:-}
-    networks:
-      - ssrf_proxy_network
-      - default
 
   # Certbot service
   # use `docker-compose --profile certbot up` to start the certbot service.
   certbot:
+    network_mode: host
     image: certbot/certbot
     profiles:
       - certbot
@@ -768,6 +743,7 @@ services:
   # The nginx reverse proxy.
   # used for reverse proxying the API service and Web service.
   nginx:
+    network_mode: host
     image: nginx:latest
     restart: always
     volumes:
@@ -787,6 +763,10 @@ services:
         "cp /docker-entrypoint-mount.sh /docker-entrypoint.sh && sed -i 's/\r$$//' /docker-entrypoint.sh && chmod +x /docker-entrypoint.sh && /docker-entrypoint.sh",
       ]
     environment:
+      NGINX_LISTEN_ADDRESS: ${NGINX_LISTEN_ADDRESS:-0.0.0.0}
+      NGINX_API_UPSTREAM: ${NGINX_API_UPSTREAM:-127.0.0.1:5001}
+      NGINX_WEB_UPSTREAM: ${NGINX_WEB_UPSTREAM:-127.0.0.1:3000}
+      NGINX_PLUGIN_UPSTREAM: ${NGINX_PLUGIN_UPSTREAM:-127.0.0.1:5002}
       NGINX_SERVER_NAME: ${NGINX_SERVER_NAME:-_}
       NGINX_HTTPS_ENABLED: ${NGINX_HTTPS_ENABLED:-false}
       NGINX_SSL_PORT: ${NGINX_SSL_PORT:-443}
@@ -802,21 +782,20 @@ services:
       NGINX_PROXY_READ_TIMEOUT: ${NGINX_PROXY_READ_TIMEOUT:-3600s}
       NGINX_PROXY_SEND_TIMEOUT: ${NGINX_PROXY_SEND_TIMEOUT:-3600s}
       NGINX_ENABLE_CERTBOT_CHALLENGE: ${NGINX_ENABLE_CERTBOT_CHALLENGE:-false}
-      NGINX_SOCKET_IO_UPSTREAM: ${NGINX_SOCKET_IO_UPSTREAM:-api_websocket:5001}
+      NGINX_SOCKET_IO_UPSTREAM: ${NGINX_SOCKET_IO_UPSTREAM:-127.0.0.1:5006}
       CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
     depends_on:
       - api
       - web
-    ports:
-      - "${EXPOSE_NGINX_PORT:-80}:${NGINX_PORT:-80}"
-      - "${EXPOSE_NGINX_SSL_PORT:-443}:${NGINX_SSL_PORT:-443}"
 
   # The Weaviate vector store.
   weaviate:
+    network_mode: host
     image: semitechnologies/weaviate:1.27.0
     profiles:
       - weaviate
     restart: always
+    command: ["--host", "127.0.0.1", "--port", "${WEAVIATE_HTTP_PORT:-18080}", "--scheme", "http"]
     volumes:
       # Mount the Weaviate data directory to the con tainer.
       - ./volumes/weaviate:/var/lib/weaviate
@@ -840,6 +819,7 @@ services:
 
   # OceanBase vector database
   oceanbase:
+    network_mode: host
     image: oceanbase/oceanbase-ce:4.3.5-lts
     container_name: oceanbase
     profiles:
@@ -858,8 +838,6 @@ services:
       MODE: mini
       LANG: C.UTF-8
       LC_ALL: C.UTF-8
-    ports:
-      - "${OCEANBASE_VECTOR_PORT:-2881}:2881"
     healthcheck:
       test:
         [
@@ -873,6 +851,7 @@ services:
 
   # seekdb vector database
   seekdb:
+    network_mode: host
     image: oceanbase/seekdb:latest
     container_name: seekdb
     profiles:
@@ -884,8 +863,6 @@ services:
       ROOT_PASSWORD: ${OCEANBASE_VECTOR_PASSWORD:-difyai123456}
       MEMORY_LIMIT: ${SEEKDB_MEMORY_LIMIT:-2G}
       REPORTER: dify-ai-seekdb
-    ports:
-      - "${OCEANBASE_VECTOR_PORT:-2881}:2881"
     healthcheck:
       test:
         [
@@ -899,6 +876,7 @@ services:
   # Qdrant vector store.
   # (if used, you need to set VECTOR_STORE to qdrant in the api & worker service.)
   qdrant:
+    network_mode: host
     image: langgenius/qdrant:v1.8.3
     profiles:
       - qdrant
@@ -910,6 +888,7 @@ services:
 
   # The Couchbase vector store.
   couchbase-server:
+    network_mode: host
     build: ./couchbase-server
     profiles:
       - couchbase
@@ -947,11 +926,13 @@ services:
 
   # The pgvector vector database.
   pgvector:
+    network_mode: host
     image: pgvector/pgvector:pg16
     profiles:
       - pgvector
     restart: always
     environment:
+      PGPORT: ${PGVECTOR_PORT:-5433}
       PGUSER: ${PGVECTOR_PGUSER:-postgres}
       # The password for the default postgres user.
       POSTGRES_PASSWORD: ${PGVECTOR_POSTGRES_PASSWORD:-difyai123456}
@@ -974,17 +955,17 @@ services:
 
   # get image from https://www.vastdata.com.cn/
   vastbase:
+    network_mode: host
     image: vastdata/vastbase-vector
     profiles:
       - vastbase
     restart: always
     environment:
+      - PGPORT=${VASTBASE_PORT:-5434}
       - VB_DBCOMPATIBILITY=PG
       - VB_DB=dify
       - VB_USERNAME=dify
       - VB_PASSWORD=Difyai123456
-    ports:
-      - "5434:5432"
     volumes:
       - ./vastbase/lic:/home/vastbase/vastbase/lic
       - ./vastbase/data:/home/vastbase/data
@@ -998,11 +979,13 @@ services:
 
   # pgvecto-rs vector store
   pgvecto-rs:
+    network_mode: host
     image: tensorchord/pgvecto-rs:pg16-v0.3.0
     profiles:
       - pgvecto-rs
     restart: always
     environment:
+      PGPORT: ${PGVECTO_RS_PORT:-5435}
       PGUSER: ${PGVECTOR_PGUSER:-postgres}
       # The password for the default postgres user.
       POSTGRES_PASSWORD: ${PGVECTOR_POSTGRES_PASSWORD:-difyai123456}
@@ -1020,6 +1003,7 @@ services:
 
   # Chroma vector database
   chroma:
+    network_mode: host
     image: ghcr.io/chroma-core/chroma:0.5.20
     profiles:
       - chroma
@@ -1033,15 +1017,13 @@ services:
 
   # InterSystems IRIS vector database
   iris:
+    network_mode: host
     image: containers.intersystems.com/intersystems/iris-community:2025.3
     profiles:
       - iris
     container_name: iris
     restart: always
     init: true
-    ports:
-      - "${IRIS_SUPER_SERVER_PORT:-1972}:1972"
-      - "${IRIS_WEB_SERVER_PORT:-52773}:52773"
     volumes:
       - ./volumes/iris:/durable
       - ./iris/iris-init.script:/iris-init.script
@@ -1054,6 +1036,7 @@ services:
 
   # Oracle vector database
   oracle:
+    network_mode: host
     image: container-registry.oracle.com/database/free:latest
     profiles:
       - oracle
@@ -1069,6 +1052,7 @@ services:
 
   # Milvus vector database services
   etcd:
+    network_mode: host
     container_name: milvus-etcd
     image: quay.io/coreos/etcd:v3.5.5
     profiles:
@@ -1086,10 +1070,9 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
-    networks:
-      - milvus
 
   minio:
+    network_mode: host
     container_name: milvus-minio
     image: minio/minio:RELEASE.2023-03-20T20-16-18Z
     profiles:
@@ -1105,18 +1088,17 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
-    networks:
-      - milvus
 
   milvus-standalone:
+    network_mode: host
     container_name: milvus-standalone
     image: milvusdb/milvus:v2.6.3
     profiles:
       - milvus
     command: ["milvus", "run", "standalone"]
     environment:
-      ETCD_ENDPOINTS: ${ETCD_ENDPOINTS:-etcd:2379}
-      MINIO_ADDRESS: ${MINIO_ADDRESS:-minio:9000}
+      ETCD_ENDPOINTS: ${ETCD_ENDPOINTS:-127.0.0.1:2379}
+      MINIO_ADDRESS: ${MINIO_ADDRESS:-127.0.0.1:9000}
       common.security.authorizationEnabled: ${MILVUS_AUTHORIZATION_ENABLED:-true}
     volumes:
       - ./volumes/milvus/milvus:/var/lib/milvus
@@ -1129,14 +1111,10 @@ services:
     depends_on:
       - etcd
       - minio
-    ports:
-      - 19530:19530
-      - 9091:9091
-    networks:
-      - milvus
 
   # Opensearch vector database
   opensearch:
+    network_mode: host
     container_name: opensearch
     image: opensearchproject/opensearch:latest
     profiles:
@@ -1155,25 +1133,23 @@ services:
         hard: ${OPENSEARCH_NOFILE_HARD:-65536}
     volumes:
       - ./volumes/opensearch/data:/usr/share/opensearch/data
-    networks:
-      - opensearch-net
 
   opensearch-dashboards:
+    network_mode: host
     container_name: opensearch-dashboards
     image: opensearchproject/opensearch-dashboards:latest
     profiles:
       - opensearch
     environment:
-      OPENSEARCH_HOSTS: '["https://opensearch:9200"]'
+      OPENSEARCH_HOSTS: '["https://127.0.0.1:9200"]'
     volumes:
       - ./volumes/opensearch/opensearch_dashboards.yml:/usr/share/opensearch-dashboards/config/opensearch_dashboards.yml
-    networks:
-      - opensearch-net
     depends_on:
       - opensearch
 
   # opengauss vector database.
   opengauss:
+    network_mode: host
     image: opengauss/opengauss:7.0.0-RC1
     profiles:
       - opengauss
@@ -1191,11 +1167,10 @@ services:
       interval: 10s
       timeout: 10s
       retries: 10
-    ports:
-      - ${OPENGAUSS_PORT:-6600}:${OPENGAUSS_PORT:-6600}
 
   # MyScale vector database
   myscale:
+    network_mode: host
     container_name: myscale
     image: myscale/myscaledb:1.6.4
     profiles:
@@ -1206,11 +1181,10 @@ services:
       - ./volumes/myscale/data:/var/lib/clickhouse
       - ./volumes/myscale/log:/var/log/clickhouse-server
       - ./volumes/myscale/config/users.d/custom_users_config.xml:/etc/clickhouse-server/users.d/custom_users_config.xml
-    ports:
-      - ${MYSCALE_PORT:-8123}:${MYSCALE_PORT:-8123}
 
   # Matrixone vector store.
   matrixone:
+    network_mode: host
     hostname: matrixone
     image: matrixorigin/matrixone:2.1.1
     profiles:
@@ -1218,12 +1192,11 @@ services:
     restart: always
     volumes:
       - ./volumes/matrixone/data:/mo-data
-    ports:
-      - ${MATRIXONE_PORT:-6001}:${MATRIXONE_PORT:-6001}
 
   # https://www.elastic.co/guide/en/elasticsearch/reference/current/settings.html
   # https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html#docker-prod-prerequisites
   elasticsearch:
+    network_mode: host
     image: docker.elastic.co/elasticsearch/elasticsearch:8.14.3
     container_name: elasticsearch
     profiles:
@@ -1243,8 +1216,6 @@ services:
       xpack.security.enabled: "true"
       xpack.security.enrollment.enabled: "false"
       xpack.security.http.ssl.enabled: "false"
-    ports:
-      - ${ELASTICSEARCH_PORT:-9200}:9200
     deploy:
       resources:
         limits:
@@ -1260,6 +1231,7 @@ services:
   # https://www.elastic.co/guide/en/kibana/current/docker.html
   # https://www.elastic.co/guide/en/kibana/current/settings.html
   kibana:
+    network_mode: host
     image: docker.elastic.co/kibana/kibana:8.14.3
     container_name: kibana
     profiles:
@@ -1276,9 +1248,7 @@ services:
       XPACK_FLEET_ISAIRGAPPED: "true"
       I18N_LOCALE: zh-CN
       SERVER_PORT: "5601"
-      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
-    ports:
-      - ${KIBANA_PORT:-5601}:5601
+      ELASTICSEARCH_HOSTS: http://127.0.0.1:9200
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:5601 >/dev/null || exit 1"]
       interval: 30s
@@ -1288,36 +1258,13 @@ services:
   # unstructured .
   # (if used, you need to set ETL_TYPE to Unstructured in the api & worker service.)
   unstructured:
+    network_mode: host
     image: downloads.unstructured.io/unstructured-io/unstructured-api:latest
     profiles:
       - unstructured
     restart: always
     volumes:
       - ./volumes/unstructured:/app/data
-
-networks:
-  # create a network between sandbox, api and ssrf_proxy, and can not access outside.
-  ssrf_proxy_network:
-    driver: bridge
-    internal: true
-  # Internal network shared only by agent_ssrf_proxy and local_sandbox.
-  local_sandbox_proxy_network:
-    driver: bridge
-    internal: true
-  # shellctl control channel (agent_backend -> local_sandbox:5004).
-  # sandbox can access agent backend through this network, this is
-  # a known limitation.
-  #
-  # The agent runtime respects HTTP(S)_PROXY, but arbitrary code execution
-  # is still possible through the shellctl channel.
-  agent_sandbox_network:
-    driver: bridge
-    internal: true
-  milvus:
-    driver: bridge
-  opensearch-net:
-    driver: bridge
-    internal: true
 
 volumes:
   oradata:

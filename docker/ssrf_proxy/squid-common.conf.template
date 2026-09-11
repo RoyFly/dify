@@ -43,8 +43,12 @@ acl CONNECT method CONNECT
 
 tcp_outgoing_address 0.0.0.0
 
+# Host-network containers may not have CAP_NET_RAW; disable Squid ICMP pinger.
+pinger_enable off
+
 ################################## Proxy Server ################################
 coredump_dir ${COREDUMP_DIR}
+#cache_log none
 refresh_pattern ^ftp:		1440	20%	10080
 refresh_pattern ^gopher:	1440	0%	1440
 refresh_pattern -i (/cgi-bin/|\?) 0	0%	0
@@ -86,5 +90,6 @@ dns_timeout 30 seconds
 dns_retransmit_interval 5 seconds
 
 logformat dify_log %ts.%03tu %6tr %>a %Ss/%03>Hs %<st %rm %ru %[un %Sh/%<a %mt
+#access_log none
 access_log daemon:/var/log/squid/access.log dify_log
 logfile_rotate 10

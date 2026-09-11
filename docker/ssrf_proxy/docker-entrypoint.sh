@@ -46,6 +46,7 @@ write_optional_private_allowlist() {
         printf ' %s' "$value" >> "$ALLOW_PRIVATE_CONF"
     done
     printf '\nhttp_access allow client_localnet %s\n' "$acl_name" >> "$ALLOW_PRIVATE_CONF"
+    printf 'http_access allow localhost %s\n' "$acl_name" >> "$ALLOW_PRIVATE_CONF"
 }
 
 {
@@ -91,6 +92,7 @@ echo "[ENTRYPOINT] replacing environment variables in the templates"
 expand_env /etc/squid/squid.conf.template > /etc/squid/squid.conf
 expand_env /etc/squid/dify_common.conf.template > /etc/squid/dify_common.conf
 
+chown -R proxy:proxy /var/spool/squid /var/log/squid
 /usr/sbin/squid -Nz
 echo "[ENTRYPOINT] starting squid"
 /usr/sbin/squid -f /etc/squid/squid.conf -NYC 1
