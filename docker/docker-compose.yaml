@@ -610,6 +610,7 @@ services:
       - ./volumes/app/storage:/app/api/storage
       - ./volumes/app/api/controllers/console/workspace/tool_providers.py:/app/api/controllers/console/workspace/tool_providers.py
       - ./volumes/app/api/controllers/console/app/workflow.py:/app/api/controllers/console/app/workflow.py
+      - ./volumes/app/api/controllers/console/tag/tags.py:/app/api/controllers/console/tag/tags.py
       - ./volumes/app/api/services/tools/workflow_tools_manage_service.py:/app/api/services/tools/workflow_tools_manage_service.py
       - ./volumes/app/api/services/tools/api_tools_manage_service.py:/app/api/services/tools/api_tools_manage_service.py
       - ./volumes/app/api/services/app_dsl_service.py:/app/api/services/app_dsl_service.py
@@ -652,6 +653,7 @@ services:
       - ./volumes/app/storage:/app/api/storage
       - ./volumes/app/api/controllers/console/workspace/tool_providers.py:/app/api/controllers/console/workspace/tool_providers.py
       - ./volumes/app/api/controllers/console/app/workflow.py:/app/api/controllers/console/app/workflow.py
+      - ./volumes/app/api/controllers/console/tag/tags.py:/app/api/controllers/console/tag/tags.py
       - ./volumes/app/api/services/tools/workflow_tools_manage_service.py:/app/api/services/tools/workflow_tools_manage_service.py
       - ./volumes/app/api/services/tools/api_tools_manage_service.py:/app/api/services/tools/api_tools_manage_service.py
       - ./volumes/app/api/services/app_dsl_service.py:/app/api/services/app_dsl_service.py
